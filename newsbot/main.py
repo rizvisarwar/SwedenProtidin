@@ -34,6 +34,7 @@ FB_PAGE_TOKEN = os.environ.get('FB_PAGE_TOKEN')
 
 # Maximum number of articles to post per run
 # Set to 1 to post one article per run (bot runs every 4 hours)
+# Set to None for unlimited posting (posts all filtered articles)
 MAX_POSTS = 1
 
 # Sweden news filtering
@@ -367,8 +368,8 @@ def main():
                 posted_count += 1
                 logger.info(f"✓ Successfully posted: {article['title'][:50]}...")
                 
-                # Stop after posting MAX_POSTS articles
-                if posted_count >= MAX_POSTS:
+                # Stop after posting MAX_POSTS articles (if MAX_POSTS is set)
+                if MAX_POSTS is not None and posted_count >= MAX_POSTS:
                     logger.info(f"Reached MAX_POSTS limit ({MAX_POSTS}). Stopping.")
                     break
             else:
