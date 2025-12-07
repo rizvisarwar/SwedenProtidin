@@ -34,7 +34,7 @@ FB_PAGE_TOKEN = os.environ.get('FB_PAGE_TOKEN')
 
 # Test mode: set to None or a high number to post all articles
 # Set to 1 for testing (post only one article)
-MAX_POSTS = None  # None = no limit, post all articles
+MAX_POSTS = 1  # None = no limit, post all articles
 
 # Sweden news filtering
 SWEDEN_KEYWORDS = [
