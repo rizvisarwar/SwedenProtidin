@@ -35,6 +35,21 @@ FB_PAGE_TOKEN = os.environ.get('FB_PAGE_TOKEN')
 # Set to 1 for testing (post only one article)
 MAX_POSTS = None  # None = no limit, post all articles
 
+# Sweden news filtering
+SWEDEN_KEYWORDS = [
+    "Sverige", "svensk", "Stockholm", "Göteborg", "Malmö", "Skåne",
+    "Uppsala", "Norrbotten", "Västerbotten", "Södermanland",
+    "Jönköping", "Örebro", "Västmanland", "Halland"
+]
+
+BLOCKLIST_KEYWORDS = [
+    "USA", "Israel", "Kina", "Ryssland", "China", "Russia",
+    "Nato", "EU", "UK", "Germany", "France", "Brazil",
+    "Middle East"
+]
+
+BLOCKLIST_CATEGORIES = ["utrikes", "world", "international"]
+
 
 def load_rss_feeds():
     """Load RSS feed URLs from JSON file."""
@@ -66,6 +81,49 @@ def save_posted_article(guid):
     posted.add(guid)
     with open(POSTED_DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(list(posted), f, ensure_ascii=False, indent=2)
+
+
+def is_sweden_news(title, description, category):
+    """
+    Filter to ensure only Sweden-related news is included.
+    Returns True if article is about Sweden, False otherwise.
+    """
+    if not title:
+        return False
+    
+    # Normalize text for case-insensitive matching
+    title_lower = title.lower()
+    desc_lower = (description or "").lower()
+    category_lower = (category or "").lower()
+    
+    # Filter 1: Category-based filter - skip international news
+    for block_cat in BLOCKLIST_CATEGORIES:
+        if block_cat.lower() in category_lower:
+            logger.debug(f"Skipping article (category filter): {title[:50]}... (category: {category})")
+            return False
+    
+    # Filter 2: Keyword-based blocklist - skip global topics
+    combined_text = f"{title_lower} {desc_lower}"
+    for block_keyword in BLOCKLIST_KEYWORDS:
+        if block_keyword.lower() in combined_text:
+            logger.debug(f"Skipping article (blocklist): {title[:50]}... (contains: {block_keyword})")
+            return False
+    
+    # Filter 3: Keyword-based allowlist - must mention Sweden
+    combined_text = f"{title_lower} {desc_lower}"
+    for sweden_keyword in SWEDEN_KEYWORDS:
+        if sweden_keyword.lower() in combined_text:
+            return True  # Found Sweden-related keyword
+    
+    # If description is empty, check if headline mentions Sweden
+    if not description or not description.strip():
+        for sweden_keyword in SWEDEN_KEYWORDS:
+            if sweden_keyword.lower() in title_lower:
+                return True
+    
+    # No Sweden keywords found
+    logger.debug(f"Skipping article (no Sweden keywords): {title[:50]}...")
+    return False
 
 
 def translate_text(text, dest='bn'):
@@ -194,11 +252,22 @@ def process_rss_feed(feed_url):
             link = entry.get('link', '')
             description = entry.get('description', '') or entry.get('summary', '')
             
+            # Extract category from tags or link
+            category = ''
+            if hasattr(entry, 'tags') and entry.tags:
+                category = ', '.join([tag.get('term', '') for tag in entry.tags])
+            # Also check link for category hints (e.g., /utrikes/, /inrikes/)
+            if '/utrikes/' in link.lower():
+                category = 'utrikes'
+            elif '/inrikes/' in link.lower():
+                category = 'inrikes'
+            
             articles.append({
                 'guid': guid,
                 'title': title,
                 'link': link,
-                'description': description
+                'description': description,
+                'category': category
             })
         
         logger.info(f"Found {len(articles)} articles in feed")
@@ -244,12 +313,22 @@ def main():
     
     # Process and post new articles
     posted_count = 0
+    filtered_count = 0
     for article in all_articles:
         guid = article['guid']
         
         # Skip if already posted
         if guid in posted_articles:
             logger.debug(f"Skipping already posted article: {article['title'][:50]}...")
+            continue
+        
+        # Filter: Only Sweden-related news
+        if not is_sweden_news(
+            article['title'],
+            article.get('description', ''),
+            article.get('category', '')
+        ):
+            filtered_count += 1
             continue
         
         try:
@@ -303,6 +382,7 @@ def main():
     
     logger.info("=" * 60)
     logger.info(f"Bot finished. Posted {posted_count} new articles.")
+    logger.info(f"Filtered out {filtered_count} non-Sweden articles.")
     logger.info("=" * 60)
 
 

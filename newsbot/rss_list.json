@@ -1,4 +1,10 @@
 [
-  "https://www.svt.se/nyheter/rss.xml"
+  "https://www.svt.se/nyheter/rss.xml",
+  "https://www.svt.se/nyheter/inrikes/rss.xml",
+  "https://www.svt.se/nyheter/lokalt/stockholm/rss.xml",
+  "https://www.svt.se/nyheter/lokalt/vast/rss.xml",
+  "https://www.svt.se/nyheter/lokalt/skane/rss.xml",
+  "https://feeds.expressen.se/nyheter/",
+  "https://www.aftonbladet.se/rss.xml"
 ]
 
