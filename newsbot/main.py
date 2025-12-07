@@ -11,6 +11,7 @@ import requests
 from googletrans import Translator
 from datetime import datetime
 import logging
+import random
 
 # Setup logging
 logging.basicConfig(
@@ -135,8 +136,8 @@ def translate_text(text, dest='bn'):
         # Remove extra whitespace
         text = ' '.join(text.split())
         # Limit text length to avoid API issues
-        if len(text) > 5000:
-            text = text[:5000]
+        if len(text) > 10000:
+            text = text[:10000]
         
         result = translator.translate(text, dest=dest)
         return result.text
@@ -299,15 +300,16 @@ def main():
     
     logger.info(f"Loaded {len(rss_feeds)} RSS feeds")
     
+    # Randomly select one RSS feed
+    selected_feed = random.choice(rss_feeds)
+    logger.info(f"Randomly selected RSS feed: {selected_feed}")
+    
     # Load posted articles database
     posted_articles = load_posted_articles()
     logger.info(f"Loaded {len(posted_articles)} previously posted articles")
     
-    # Process all feeds
-    all_articles = []
-    for feed_url in rss_feeds:
-        articles = process_rss_feed(feed_url)
-        all_articles.extend(articles)
+    # Process the selected feed
+    all_articles = process_rss_feed(selected_feed)
     
     logger.info(f"Total articles found: {len(all_articles)}")
     

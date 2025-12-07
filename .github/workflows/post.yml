@@ -1,10 +1,11 @@
-name: Daily News Post to Facebook
+name: News Post to Facebook
 
 on:
   schedule:
-    # Run daily at 08:00 Sweden time (CET/CEST)
-    # UTC: 07:00 (CET) or 06:00 (CEST)
-    - cron: '0 7 * * *'
+    # Run every 4 hours
+    # Cron format: minute hour day month weekday
+    # Runs at: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
+    - cron: '0 */4 * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
