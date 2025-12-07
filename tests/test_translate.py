@@ -49,16 +49,16 @@ class TestTranslateText:
             assert call_args[0][0] == "Hello World Test"
     
     def test_translate_text_truncates_long_text(self):
-        """Test that text longer than 5000 chars is truncated"""
-        long_text = "A" * 6000
+        """Test that text longer than 8000 chars is truncated"""
+        long_text = "A" * 9000
         with patch('newsbot.main.translator') as mock_translator:
             mock_translator.translate.return_value = Mock(text="Translated")
             result = translate_text(long_text, dest='bn')
             mock_translator.translate.assert_called_once()
             call_args = mock_translator.translate.call_args
-            # Should be truncated to 5000 chars
-            assert len(call_args[0][0]) == 5000
-            assert call_args[0][0] == "A" * 5000
+            # Should be truncated to 8000 chars
+            assert len(call_args[0][0]) == 8000
+            assert call_args[0][0] == "A" * 8000
     
     def test_translate_text_exactly_5000_chars(self):
         """Test that text exactly 5000 chars is not truncated"""

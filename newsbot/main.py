@@ -85,47 +85,31 @@ def save_posted_article(guid):
         json.dump(list(posted), f, ensure_ascii=False, indent=2)
 
 
-def is_sweden_news(title, description, category):
+def is_sweden_news(title, description, category, link=""):
     """
-    Filter to ensure only Sweden-related news is included.
-    Returns True if article is about Sweden, False otherwise.
+    Filter function - filters out articles with 'varlden' or 'expressen-direkt' in the link.
+    Returns True to process article, False to skip.
     """
     if not title:
         return False
     
-    # Normalize text for case-insensitive matching
-    title_lower = title.lower()
-    desc_lower = (description or "").lower()
-    category_lower = (category or "").lower()
+    if not link:
+        return True
     
-    # Filter 1: Category-based filter - skip international news
-    for block_cat in BLOCKLIST_CATEGORIES:
-        if block_cat.lower() in category_lower:
-            logger.debug(f"Skipping article (category filter): {title[:50]}... (category: {category})")
-            return False
+    link_lower = link.lower()
     
-    # Filter 2: Keyword-based blocklist - skip global topics
-    combined_text = f"{title_lower} {desc_lower}"
-    for block_keyword in BLOCKLIST_KEYWORDS:
-        if block_keyword.lower() in combined_text:
-            logger.debug(f"Skipping article (blocklist): {title[:50]}... (contains: {block_keyword})")
-            return False
+    # Filter out articles with 'varlden' (world) in the link
+    if 'varlden' in link_lower:
+        logger.debug(f"Skipping article (varlden in link): {title[:50]}...")
+        return False
     
-    # Filter 3: Keyword-based allowlist - must mention Sweden
-    combined_text = f"{title_lower} {desc_lower}"
-    for sweden_keyword in SWEDEN_KEYWORDS:
-        if sweden_keyword.lower() in combined_text:
-            return True  # Found Sweden-related keyword
+    # Filter out articles with 'expressen-direkt' in the link
+    if 'expressen-direkt' in link_lower:
+        logger.debug(f"Skipping article (expressen-direkt in link): {title[:50]}...")
+        return False
     
-    # If description is empty, check if headline mentions Sweden
-    if not description or not description.strip():
-        for sweden_keyword in SWEDEN_KEYWORDS:
-            if sweden_keyword.lower() in title_lower:
-                return True
-    
-    # No Sweden keywords found
-    logger.debug(f"Skipping article (no Sweden keywords): {title[:50]}...")
-    return False
+    # Accept all other articles
+    return True
 
 
 def translate_text(text, dest='bn'):
@@ -137,8 +121,8 @@ def translate_text(text, dest='bn'):
         # Remove extra whitespace
         text = ' '.join(text.split())
         # Limit text length to avoid API issues
-        if len(text) > 10000:
-            text = text[:10000]
+        if len(text) > 8000:
+            text = text[:8000]
         
         result = translator.translate(text, dest=dest)
         return result.text
@@ -147,55 +131,31 @@ def translate_text(text, dest='bn'):
         return text  # Return original if translation fails
 
 
-def create_summary(description):
-    """Create a 3-bullet point summary from description."""
+def clean_description(description):
+    """Clean description text by removing HTML tags and CDATA."""
     if not description:
-        return []
+        return ""
     
-    # Clean description
-    desc = description.strip()
-    # Remove HTML tags (simple approach)
     import re
+    # Remove CDATA wrapper if present
+    desc = description.strip()
+    desc = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', desc, flags=re.DOTALL)
+    
+    # Remove HTML tags
     desc = re.sub(r'<[^>]+>', '', desc)
+    
+    # Clean up whitespace
     desc = ' '.join(desc.split())
     
-    # Limit to first 300 characters
-    if len(desc) > 300:
-        desc = desc[:300]
-    
-    if not desc:
-        return []
-    
-    # Split into sentences (simple approach)
-    sentences = re.split(r'[.!?]\s+', desc)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    
-    # Take first 3 sentences or split long text into 3 parts
-    if len(sentences) >= 3:
-        summary_points = sentences[:3]
-    elif len(sentences) > 0:
-        # If fewer sentences, split the text into 3 roughly equal parts
-        chunk_size = max(1, len(desc) // 3)
-        summary_points = [
-            desc[i:i+chunk_size].strip()
-            for i in range(0, min(len(desc), chunk_size * 3), chunk_size)
-        ]
-        summary_points = [p for p in summary_points if p]
-    else:
-        return []
-    
-    return summary_points[:3]  # Ensure max 3 points
+    return desc
 
 
-def format_facebook_post(title_bn, summary_points, link):
+def format_facebook_post(title_bn, description_bn, link):
     """Format the Facebook post message."""
-    post = f"📰 শিরোনাম: {title_bn}\n\n"
+    post = f"{title_bn}\n\n"
     
-    if summary_points:
-        post += "📌 সংক্ষেপ:\n"
-        for point in summary_points:
-            post += f"- {point}\n"
-        post += "\n"
+    if description_bn:
+        post += f"📌 {description_bn}\n\n"
     
     post += f"🔗 সূত্র: {link}"
     
@@ -325,11 +285,12 @@ def main():
             logger.debug(f"Skipping already posted article: {article['title'][:50]}...")
             continue
         
-        # Filter: Only Sweden-related news
+        # Filter check - skip articles with 'varlden' in link
         if not is_sweden_news(
             article['title'],
             article.get('description', ''),
-            article.get('category', '')
+            article.get('category', ''),
+            article.get('link', '')
         ):
             filtered_count += 1
             continue
@@ -340,23 +301,18 @@ def main():
             if not title_bn:
                 title_bn = article['title']  # Fallback to original
             
-            # Create summary
-            summary_points = create_summary(article['description'])
-            if summary_points:
-                # Translate summary points
-                summary_points_bn = []
-                for point in summary_points:
-                    point_bn = translate_text(point, dest='bn')
-                    if point_bn:
-                        summary_points_bn.append(point_bn)
-                    else:
-                        summary_points_bn.append(point)
-                summary_points = summary_points_bn
+            # Clean and translate description
+            description_clean = clean_description(article.get('description', ''))
+            description_bn = ""
+            if description_clean:
+                description_bn = translate_text(description_clean, dest='bn')
+                if not description_bn:
+                    description_bn = description_clean  # Fallback to original
             
             # Format Facebook post
             fb_message = format_facebook_post(
                 title_bn,
-                summary_points,
+                description_bn,
                 article['link']
             )
             
@@ -385,7 +341,7 @@ def main():
     
     logger.info("=" * 60)
     logger.info(f"Bot finished. Posted {posted_count} new articles.")
-    logger.info(f"Filtered out {filtered_count} non-Sweden articles.")
+    logger.info(f"Filtered out {filtered_count} articles.")
     logger.info("=" * 60)
 
 
