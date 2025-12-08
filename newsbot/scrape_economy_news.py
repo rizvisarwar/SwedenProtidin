@@ -30,7 +30,8 @@ CATEGORY = config.get("category", "ekonomi")
 CATEGORY_URL = f"{BASE_URL}/category/{CATEGORY}/"
 
 # Initialize summarizer (Dependency Injection - follows SOLID principles)
-_summarizer = create_summarizer("sumy", language="swedish")
+# Use ISO 639-1 language code 'sv' for Swedish
+_summarizer = create_summarizer("sumy", language="sv")
 
 HEADERS = {
     "User-Agent": (

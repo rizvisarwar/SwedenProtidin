@@ -33,12 +33,13 @@ class SumySummaryGenerator(SummaryGenerator):
     Follows Single Responsibility Principle - only handles Sumy-based summarization.
     """
     
-    def __init__(self, language: str = 'swedish'):
+    def __init__(self, language: str = 'sv'):
         """
         Initialize Sumy summarizer.
         
         Args:
-            language: Language code for summarization (default: 'swedish')
+            language: ISO 639-1 language code for summarization (default: 'sv' for Swedish)
+                      Examples: 'sv' (Swedish), 'en' (English), 'de' (German)
         """
         self.language = language
         self._summarizer = None
