@@ -86,7 +86,7 @@ def parse_category_page(html):
             "url": url
         })
 
-    return articles[:1]  # limit to latest 5 articles
+    return articles[:5]  # limit to latest 5 articles
 
 def parse_article_page(url, summarizer=None):
     """
