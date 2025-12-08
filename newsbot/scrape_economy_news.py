@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import time
 import json
 import os
+from summarizer import create_summarizer
 
 # Load configuration
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
@@ -27,6 +28,9 @@ config = load_config()
 BASE_URL = config.get("base_url", "https://marcusoscarsson.se")
 CATEGORY = config.get("category", "ekonomi")
 CATEGORY_URL = f"{BASE_URL}/category/{CATEGORY}/"
+
+# Initialize summarizer (Dependency Injection - follows SOLID principles)
+_summarizer = create_summarizer("sumy", language="swedish")
 
 HEADERS = {
     "User-Agent": (
@@ -83,8 +87,21 @@ def parse_category_page(html):
 
     return articles[:1]  # limit to latest 5 articles
 
-def parse_article_page(url):
-    """Parse individual article page to extract content."""
+def parse_article_page(url, summarizer=None):
+    """
+    Parse individual article page to extract content and generate summary.
+    
+    Args:
+        url: Article URL to parse
+        summarizer: SummaryGenerator instance (optional, uses default if not provided)
+                    Follows Dependency Inversion Principle - accepts abstraction
+        
+    Returns:
+        Dictionary with title, content, and summary
+    """
+    if summarizer is None:
+        summarizer = _summarizer
+    
     try:
         html = fetch_html(url)
         soup = BeautifulSoup(html, "html.parser")
@@ -115,15 +132,22 @@ def parse_article_page(url):
                 content_text = "\n".join(paragraphs)
                 break
 
+        # Generate summary using AI summarizer
+        summary = ""
+        if content_text:
+            summary = summarizer.summarize(content_text, max_sentences=3)
+
         return {
             "title_sv": title,
-            "content_sv": content_text
+            "content_sv": content_text,
+            "summary_sv": summary
         }
     except Exception as e:
         print(f"Error parsing article {url}: {e}")
         return {
             "title_sv": None,
-            "content_sv": ""
+            "content_sv": "",
+            "summary_sv": ""
         }
 
 def scrape_ekonomi():
