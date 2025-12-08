@@ -1,6 +1,7 @@
 feedparser==6.0.10
 googletrans==4.0.0-rc1
 requests==2.31.0
+beautifulsoup4==4.12.2
 pytest==7.4.3
 pytest-cov==4.1.0
 
