@@ -97,11 +97,14 @@ def translate_text(text, dest='bn'):
 
 
 def format_facebook_post(title_bn, summary_bn, link):
-    """Format the Facebook post message."""
-    post = f"{title_bn}\n\n"
+    """
+    Format the Facebook post message.
+    New format: Bangla summary text + source link
+    """
+    post = ""
     
     if summary_bn:
-        post += f"📌 {summary_bn}\n\n"
+        post = f"{summary_bn}\n\n"
     
     post += f"🔗 সূত্র: {link}"
     
