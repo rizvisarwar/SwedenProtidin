@@ -3,9 +3,30 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import time
 import json
+import os
 
-BASE_URL = "https://marcusoscarsson.se"
-CATEGORY_URL = f"{BASE_URL}/category/ekonomi/"
+# Load configuration
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
+
+def load_config():
+    """Load configuration from config.json file."""
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # Default fallback configuration
+        return {
+            "base_url": "https://marcusoscarsson.se",
+            "category": "ekonomi"
+        }
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON in {CONFIG_FILE}")
+        raise
+
+config = load_config()
+BASE_URL = config.get("base_url", "https://marcusoscarsson.se")
+CATEGORY = config.get("category", "ekonomi")
+CATEGORY_URL = f"{BASE_URL}/category/{CATEGORY}/"
 
 HEADERS = {
     "User-Agent": (
