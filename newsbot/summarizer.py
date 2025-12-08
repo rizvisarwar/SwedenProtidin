@@ -72,15 +72,18 @@ class SumySummaryGenerator(SummaryGenerator):
         import re
         
         # Remove common noise patterns
-        # Remove date patterns like "2025 12 08" or "2025-12-08" (standalone or with newlines)
-        text = re.sub(r'\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}', '', text)
+        # Remove date patterns like "2025 12 08" or "2025-12-08" only if they're standalone
+        # (on their own line or surrounded by whitespace/newlines) to avoid corrupting content
+        # First, remove dates that are on their own line (most common noise pattern)
+        text = re.sub(r'^\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\s*$', '', text, flags=re.MULTILINE)
         text = re.sub(r'\n\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\n', '\n', text)
-        text = re.sub(r'^\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\n', '', text, flags=re.MULTILINE)
+        text = re.sub(r'\n\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\s+', '\n', text)
+        text = re.sub(r'\s+\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\n', '\n', text)
         
-        # Remove standalone year numbers (likely dates) but keep them if part of a sentence
-        # Only remove if they're on their own line or surrounded by whitespace
+        # Remove standalone year numbers only if they're on their own line
+        # This prevents removing years that are part of sentences like "founded in 2025"
+        text = re.sub(r'^\b\d{4}\b\s*$', '', text, flags=re.MULTILINE)
         text = re.sub(r'\n\b\d{4}\b\n', '\n', text)
-        text = re.sub(r'^\b\d{4}\b\n', '', text, flags=re.MULTILINE)
         
         # Remove email addresses
         text = re.sub(r'\S+@\S+', '', text)
