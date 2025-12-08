@@ -36,23 +36,41 @@ FB_PAGE_TOKEN = os.environ.get('FB_PAGE_TOKEN')
 MAX_POSTS = 1
 
 
+def normalize_url(url):
+    """
+    Normalize URL to ensure consistent format for duplicate checking.
+    Removes trailing slashes and ensures consistent format.
+    """
+    if not url:
+        return ""
+    url = url.strip()
+    # Remove trailing slash for consistency
+    if url.endswith('/'):
+        url = url[:-1]
+    return url
+
+
 def load_posted_articles():
-    """Load list of already posted article GUIDs."""
+    """Load list of already posted article URLs (normalized)."""
     if os.path.exists(POSTED_DB_FILE):
         try:
             with open(POSTED_DB_FILE, 'r', encoding='utf-8') as f:
-                return set(json.load(f))
+                urls = json.load(f)
+                # Normalize all URLs in the database
+                return {normalize_url(url) for url in urls if url}
         except (json.JSONDecodeError, FileNotFoundError):
             return set()
     return set()
 
 
-def save_posted_article(guid):
-    """Save article GUID to posted database."""
+def save_posted_article(url):
+    """Save article URL to posted database (normalized)."""
     posted = load_posted_articles()
-    posted.add(guid)
-    with open(POSTED_DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(list(posted), f, ensure_ascii=False, indent=2)
+    normalized_url = normalize_url(url)
+    if normalized_url:
+        posted.add(normalized_url)
+        with open(POSTED_DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(sorted(list(posted)), f, ensure_ascii=False, indent=2)
 
 
 
@@ -161,16 +179,22 @@ def main():
     
     # Process and post new articles
     posted_count = 0
+    skipped_count = 0
     for article in all_articles:
         # Use URL as unique identifier
-        guid = article.get('url', '')
-        if not guid:
+        url = article.get('url', '')
+        if not url:
             logger.warning("Article missing URL, skipping...")
             continue
         
+        # Normalize URL for consistent duplicate checking
+        normalized_url = normalize_url(url)
+        
         # Skip if already posted
-        if guid in posted_articles:
-            logger.debug(f"Skipping already posted article: {article.get('title_sv', '')[:50]}...")
+        if normalized_url in posted_articles:
+            title = article.get('title_sv', 'Unknown')
+            logger.info(f"⏭️  Skipping already posted article: {title[:50]}... (URL: {normalized_url[:60]}...)")
+            skipped_count += 1
             continue
         
         # Get title and summary
@@ -198,14 +222,14 @@ def main():
             fb_message = format_facebook_post(
                 title_bn,
                 summary_bn,
-                guid  # URL is used as link
+                url  # Original URL is used as link
             )
             
             # Post to Facebook
             logger.info(f"Posting article: {title_sv[:50]}...")
             if post_to_facebook(fb_message):
-                # Mark as posted
-                save_posted_article(guid)
+                # Mark as posted (save normalized URL)
+                save_posted_article(normalized_url)
                 posted_count += 1
                 logger.info(f"✓ Successfully posted: {title_sv[:50]}...")
                 
@@ -226,6 +250,8 @@ def main():
     
     logger.info("=" * 60)
     logger.info(f"Bot finished. Posted {posted_count} new articles.")
+    if skipped_count > 0:
+        logger.info(f"Skipped {skipped_count} already posted articles.")
     logger.info("=" * 60)
 
 
