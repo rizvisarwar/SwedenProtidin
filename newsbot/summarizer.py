@@ -294,4 +294,3 @@ class SimpleSummaryGenerator(SummaryGenerator):
         
         summary_sentences = sentences[:max_sentences]
         return " ".join(summary_sentences)
-
