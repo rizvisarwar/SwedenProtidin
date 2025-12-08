@@ -133,10 +133,25 @@ def parse_article_page(url, summarizer=None):
                 content_text = "\n".join(paragraphs)
                 break
 
-        # Generate summary using AI summarizer
-        summary = ""
+        # Clean content: remove common noise
         if content_text:
-            summary = summarizer.summarize(content_text, max_sentences=3)
+            import re
+            # Remove date patterns like "2025 12 08" (standalone lines)
+            content_text = re.sub(r'^\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\s*$', '', content_text, flags=re.MULTILINE)
+            content_text = re.sub(r'\n\d{4}[\s\-]\d{1,2}[\s\-]\d{1,2}\n', '\n', content_text)
+            # Remove author bylines and metadata (common patterns)
+            content_text = re.sub(r'^.*?(?:Text:|Foto:|Foto:|Bild:).*?$', '', content_text, flags=re.MULTILINE | re.IGNORECASE)
+            # Remove "LÄS MER:" links and similar
+            content_text = re.sub(r'LÄS MER:.*$', '', content_text, flags=re.MULTILINE | re.IGNORECASE)
+            # Remove excessive newlines
+            content_text = re.sub(r'\n{3,}', '\n\n', content_text)
+            content_text = content_text.strip()
+
+        # Generate summary using AI summarizer
+        # Use 4 sentences for better context (can be adjusted)
+        summary = ""
+        if content_text and len(content_text) > 100:  # Only summarize if substantial content
+            summary = summarizer.summarize(content_text, max_sentences=4)
 
         return {
             "title_sv": title,
