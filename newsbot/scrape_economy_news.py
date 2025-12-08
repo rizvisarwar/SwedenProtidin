@@ -89,9 +89,15 @@ def parse_article_page(url):
         html = fetch_html(url)
         soup = BeautifulSoup(html, "html.parser")
 
-        # Title
-        title_elem = soup.select_one("h1")
-        title = title_elem.get_text(strip=True) if title_elem else None
+        # --- Title extraction ---
+        # Read from <title> tag in <head> section
+        title_elem = soup.find("title")
+        title = None
+        if title_elem:
+            title = title_elem.get_text(strip=True)
+            # If title contains " | " separator, extract the first part (before the separator)
+            if " | " in title:
+                title = title.split(" | ")[0].strip()
 
         # Content
         content_selectors = [
@@ -117,8 +123,7 @@ def parse_article_page(url):
         print(f"Error parsing article {url}: {e}")
         return {
             "title_sv": None,
-            "content_sv": "",
-            "image": None
+            "content_sv": ""
         }
 
 def scrape_ekonomi():
