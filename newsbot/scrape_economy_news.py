@@ -140,14 +140,12 @@ def parse_article_page(url, summarizer=None):
 
         return {
             "title_sv": title,
-            "content_sv": content_text,
             "summary_sv": summary
         }
     except Exception as e:
         print(f"Error parsing article {url}: {e}")
         return {
             "title_sv": None,
-            "content_sv": "",
             "summary_sv": ""
         }
 
