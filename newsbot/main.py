@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Automated Swedish News to Facebook Bot
-Fetches news from scrape_economy_news.py, translates to Bangla, and posts to Facebook Page.
+Fetches news from scrape_news.py (Ekonomi and Sverige categories), translates to Bangla, and posts to Facebook Page.
 """
 
 import json
@@ -10,7 +10,7 @@ import requests
 from googletrans import Translator
 from datetime import datetime
 import logging
-from scrape_economy_news import scrape_ekonomi
+from scrape_news import scrape_news
 
 # Setup logging
 logging.basicConfig(
@@ -166,10 +166,10 @@ def main():
     posted_articles = load_posted_articles()
     logger.info(f"Loaded {len(posted_articles)} previously posted articles")
     
-    # Scrape economy news
-    logger.info("Scraping economy news from marcusoscarsson.se...")
+    # Scrape news from multiple categories
+    logger.info("Scraping news from marcusoscarsson.se (Ekonomi and Sverige categories)...")
     try:
-        scraped_data = scrape_ekonomi()
+        scraped_data = scrape_news()
         all_articles = scraped_data.get('articles', [])
         logger.info(f"Scraped {len(all_articles)} articles")
     except Exception as e:

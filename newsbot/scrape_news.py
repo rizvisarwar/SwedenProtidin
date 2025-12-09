@@ -18,7 +18,7 @@ def load_config():
         # Default fallback configuration
         return {
             "base_url": "https://marcusoscarsson.se",
-            "category": "ekonomi"
+            "categories": ["ekonomi", "sverige"]
         }
     except json.JSONDecodeError:
         print(f"Error: Invalid JSON in {CONFIG_FILE}")
@@ -26,8 +26,13 @@ def load_config():
 
 config = load_config()
 BASE_URL = config.get("base_url", "https://marcusoscarsson.se")
-CATEGORY = config.get("category", "ekonomi")
-CATEGORY_URL = f"{BASE_URL}/category/{CATEGORY}/"
+# Support both old "category" (single) and new "categories" (list) for backward compatibility
+if "categories" in config:
+    CATEGORIES = config["categories"]
+elif "category" in config:
+    CATEGORIES = [config["category"]]
+else:
+    CATEGORIES = ["ekonomi"]  # default fallback
 
 # Initialize summarizer (Dependency Injection - follows SOLID principles)
 # Use ISO 639-1 language code 'sv' for Swedish
@@ -51,7 +56,17 @@ def fetch_html(url):
         print(f"Error fetching {url}: {e}")
         raise
 
-def parse_category_page(html):
+def parse_category_page(html, category_name=None):
+    """
+    Parse category page to extract article links.
+    
+    Args:
+        html: HTML content of the category page
+        category_name: Optional category name to include in article metadata
+    
+    Returns:
+        List of article dictionaries with title_sv, url, and optionally category
+    """
     soup = BeautifulSoup(html, "html.parser")
     articles = []
 
@@ -81,12 +96,16 @@ def parse_category_page(html):
         if not url.startswith("http"):
             url = BASE_URL + url
 
-        articles.append({
+        article = {
             "title_sv": title,
             "url": url
-        })
+        }
+        if category_name:
+            article["category"] = category_name
+        
+        articles.append(article)
 
-    return articles[:5]  # limit to latest 5 articles
+    return articles[:5]  # limit to latest 5 articles per category
 
 def parse_article_page(url, summarizer=None):
     """
@@ -164,18 +183,41 @@ def parse_article_page(url, summarizer=None):
             "summary_sv": ""
         }
 
-def scrape_ekonomi():
-    category_html = fetch_html(CATEGORY_URL)
-    articles = parse_category_page(category_html)
-
+def scrape_news():
+    """
+    Scrape articles from multiple categories (Ekonomi and Sverige).
+    Combines articles from all configured categories.
+    """
+    all_articles = []
+    
+    # Fetch articles from each category
+    for category in CATEGORIES:
+        category_url = f"{BASE_URL}/category/{category}/"
+        print(f"Fetching articles from category: {category}")
+        
+        try:
+            category_html = fetch_html(category_url)
+            articles = parse_category_page(category_html, category_name=category.capitalize())
+            all_articles.extend(articles)
+        except Exception as e:
+            print(f"Error fetching category {category}: {e}")
+            continue
+    
+    # Determine category display name(s)
+    if len(CATEGORIES) == 1:
+        category_display = CATEGORIES[0].capitalize()
+    else:
+        category_display = ", ".join(c.capitalize() for c in CATEGORIES)
+    
     scraped_output = {
         "source": "marcusoscarsson.se",
-        "category": "Ekonomi",
+        "categories": [c.capitalize() for c in CATEGORIES],
         "scraped_at": datetime.now(timezone.utc).isoformat(),
         "articles": []
     }
 
-    for art in articles:
+    # Process each article
+    for art in all_articles:
         print(f"Scraping article: {art['url']}")
         detail = parse_article_page(art["url"])
 
@@ -188,6 +230,10 @@ def scrape_ekonomi():
 
     return scraped_output
 
+# Keep backward compatibility alias
+scrape_ekonomi = scrape_news
+
 if __name__ == "__main__":
-    data = scrape_ekonomi()
+    data = scrape_news()
     print(json.dumps(data, indent=2, ensure_ascii=False))
+
