@@ -67,11 +67,11 @@ except ImportError:
     
     sys.modules['cgi'] = cgi
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'newsbot'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'newsbot'))
 
 def main():
     parser = argparse.ArgumentParser(description='View scraped article text (output is always saved to file)')
-    parser.add_argument('--output', '-o', type=str, default='scraped_text_output.txt', help='Output file name (default: scraped_text_output.txt)')
+    parser.add_argument('--output', '-o', type=str, default='tests/output/scraped_text_output.txt', help='Output file name (default: tests/output/scraped_text_output.txt)')
     parser.add_argument('--limit', '-l', type=int, default=5, help='Limit number of articles (default: 5)')
     parser.add_argument('--full-content', action='store_true', help='Show full article content (if not set, shows first 2000 chars)')
     
@@ -84,7 +84,7 @@ def main():
     print()
     
     # Check for OpenAI API key if needed
-    config_file = os.path.join(os.path.dirname(__file__), 'newsbot', 'config.json')
+    config_file = os.path.join(os.path.dirname(__file__), '..', '..', 'newsbot', 'config.json')
     summarizer_type = "sumy"
     try:
         with open(config_file, 'r', encoding='utf-8') as f:

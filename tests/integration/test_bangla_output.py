@@ -82,7 +82,7 @@ except ImportError:
     # Also set parse_header as a module-level function for compatibility
     cgi.parse_header = _create_parse_header()
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'newsbot'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'newsbot'))
 
 # scrape_news will be imported after API key check
 from googletrans import Translator
@@ -299,7 +299,7 @@ def main():
     args = parser.parse_args()
     
     # Load config to check summarizer settings
-    config_file = os.path.join(os.path.dirname(__file__), 'newsbot', 'config.json')
+    config_file = os.path.join(os.path.dirname(__file__), '..', '..', 'newsbot', 'config.json')
     output_lang = "sv"
     summarizer_type = "sumy"
     try:

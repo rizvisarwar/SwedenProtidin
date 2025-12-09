@@ -35,3 +35,6 @@ __pycache__/
 .tox/
 .hypothesis/
 
+# Test output files
+tests/output/*.txt
+

@@ -8,7 +8,7 @@ import os
 import sys
 
 # Add newsbot to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'newsbot'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'newsbot'))
 
 from summarizer import create_summarizer
 
