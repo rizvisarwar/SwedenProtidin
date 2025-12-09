@@ -35,8 +35,21 @@ else:
     CATEGORIES = ["ekonomi"]  # default fallback
 
 # Initialize summarizer (Dependency Injection - follows SOLID principles)
-# Use ISO 639-1 language code 'sv' for Swedish
-_summarizer = create_summarizer("sumy", language="sv")
+# Read summarizer config from config.json
+_summarizer_config = config.get("summarizer", {})
+_summarizer_type = _summarizer_config.get("type", "sumy")
+_summarizer_language = _summarizer_config.get("language", "sv")
+_summarizer_kwargs = {}
+
+# Only add language parameter for summarizers that support it (not OpenAI)
+if _summarizer_type in ["sumy", "textrank", "huggingface"]:
+    _summarizer_kwargs["language"] = _summarizer_language
+
+# Add OpenAI API key if using OpenAI summarizer
+if _summarizer_type == "openai":
+    _summarizer_kwargs["api_key"] = os.environ.get("OPENAI_API_KEY")
+
+_summarizer = create_summarizer(_summarizer_type, **_summarizer_kwargs)
 
 HEADERS = {
     "User-Agent": (

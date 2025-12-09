@@ -4,6 +4,7 @@ Provides abstract interface for text summarization.
 """
 from abc import ABC, abstractmethod
 from typing import Optional
+import os
 
 
 class SummaryGenerator(ABC):
@@ -248,13 +249,303 @@ class SumySummaryGenerator(SummaryGenerator):
         return summary.strip()
 
 
+class OpenAISummaryGenerator(SummaryGenerator):
+    """
+    Abstractive summarization using OpenAI GPT models.
+    Produces natural, human-like summaries that are more engaging than extractive methods.
+    """
+    
+    def __init__(self, model: str = "gpt-3.5-turbo", api_key: str = None, max_tokens: int = 150):
+        """
+        Initialize OpenAI summarizer.
+        
+        Args:
+            model: OpenAI model to use ('gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview')
+            api_key: OpenAI API key (if None, uses OPENAI_API_KEY env var)
+            max_tokens: Maximum tokens in summary (default: 150 for ~2-3 sentences)
+        """
+        self.model = model
+        self.api_key = api_key or os.environ.get('OPENAI_API_KEY')
+        self.max_tokens = max_tokens
+        
+        if not self.api_key:
+            raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
+    
+    def summarize(self, text: str, max_sentences: int = 3) -> str:
+        """
+        Generate abstractive summary using OpenAI GPT.
+        
+        Args:
+            text: Input text to summarize
+            max_sentences: Target number of sentences (used to estimate max_tokens)
+            
+        Returns:
+            Natural, engaging summary text
+        """
+        if not text or not text.strip():
+            return ""
+        
+        try:
+            import requests
+            
+            # Truncate text if too long (GPT-3.5-turbo has 16k context, but we want to keep it reasonable)
+            # Keep first ~3000 characters to ensure we get the main content
+            if len(text) > 3000:
+                text = text[:3000] + "..."
+            
+            # Adjust max_tokens based on max_sentences (roughly 50 tokens per sentence)
+            target_tokens = min(self.max_tokens, max_sentences * 50)
+            
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Prompt optimized for Swedish news articles - asks for engaging, readable summary
+            prompt = f"""Sammanfatta följande nyhetsartikel på ett engagerande och lättläst sätt. 
+Fokusera på de viktigaste punkterna och gör sammanfattningen intressant för läsare.
+Använd klart och tydligt språk.
+
+Artikel:
+{text}
+
+Sammanfattning:"""
+            
+            data = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "Du är en expert på att sammanfatta nyhetsartiklar på ett engagerande sätt."},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": target_tokens,
+                "temperature": 0.7,  # Slightly creative for more engaging summaries
+            }
+            
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            summary = result['choices'][0]['message']['content'].strip()
+            
+            return summary
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"OpenAI summarization error: {e}")
+            # Fallback to extractive method
+            fallback = SumySummaryGenerator(language='sv')
+            return fallback.summarize(text, max_sentences)
+
+
+class HuggingFaceSummaryGenerator(SummaryGenerator):
+    """
+    Abstractive summarization using Hugging Face transformers.
+    Uses Swedish or multilingual models for better quality summaries.
+    Free and runs locally, but requires more computational resources.
+    """
+    
+    def __init__(self, model_name: str = "KBLab/sentence-bert-swedish-cased", use_abstractive: bool = True):
+        """
+        Initialize Hugging Face summarizer.
+        
+        Args:
+            model_name: Hugging Face model name
+                      Options:
+                      - "KBLab/sentence-bert-swedish-cased" (Swedish BERT, extractive)
+                      - "facebook/bart-large-cnn" (English, abstractive, good quality)
+                      - "google/mt5-base" (Multilingual, abstractive)
+            use_abstractive: If True, use abstractive models (BART, T5). If False, use extractive.
+        """
+        self.model_name = model_name
+        self.use_abstractive = use_abstractive
+        self._model = None
+        self._tokenizer = None
+        self._initialized = False
+    
+    def _initialize(self):
+        """Lazy initialization of model and tokenizer."""
+        if self._initialized:
+            return
+        
+        try:
+            from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+            
+            if self.use_abstractive:
+                # Use abstractive summarization pipeline
+                self._summarizer = pipeline(
+                    "summarization",
+                    model=self.model_name,
+                    tokenizer=self.model_name,
+                    device=-1  # Use CPU (-1) or GPU (0, 1, etc.)
+                )
+            else:
+                # For extractive, we'd need a different approach
+                # For now, fall back to abstractive
+                self._summarizer = pipeline(
+                    "summarization",
+                    model="facebook/bart-large-cnn",
+                    device=-1
+                )
+            
+            self._initialized = True
+            
+        except ImportError:
+            raise ImportError(
+                "transformers library not installed. Install with: pip install transformers torch"
+            )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to initialize Hugging Face model: {e}")
+            raise
+    
+    def summarize(self, text: str, max_sentences: int = 3) -> str:
+        """
+        Generate abstractive summary using Hugging Face transformers.
+        
+        Args:
+            text: Input text to summarize
+            max_sentences: Target number of sentences (used to estimate max_length)
+            
+        Returns:
+            Natural summary text
+        """
+        if not text or not text.strip():
+            return ""
+        
+        try:
+            self._initialize()
+            
+            # Estimate max_length based on target sentences (roughly 50 tokens per sentence)
+            max_length = min(150, max_sentences * 50)
+            min_length = max(30, max_sentences * 20)
+            
+            # Truncate if too long (most models have token limits)
+            # BART can handle ~1024 tokens, so keep text reasonable
+            if len(text) > 2000:
+                text = text[:2000]
+            
+            result = self._summarizer(
+                text,
+                max_length=max_length,
+                min_length=min_length,
+                do_sample=True,
+                temperature=0.7,
+                truncation=True
+            )
+            
+            summary = result[0]['summary_text'].strip()
+            return summary
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Hugging Face summarization error: {e}")
+            # Fallback to extractive method
+            fallback = SumySummaryGenerator(language='sv')
+            return fallback.summarize(text, max_sentences)
+
+
+class TextRankSummaryGenerator(SummaryGenerator):
+    """
+    Alternative extractive summarizer using TextRank algorithm.
+    Sometimes produces better results than LexRank for news articles.
+    """
+    
+    def __init__(self, language: str = 'sv'):
+        """Initialize TextRank summarizer."""
+        self.language = language
+        self._summarizer = None
+        self._parser = None
+        self._initialized = False
+    
+    def _initialize(self):
+        """Initialize TextRank components."""
+        try:
+            from sumy.parsers.plaintext import PlaintextParser
+            from sumy.nlp.tokenizers import Tokenizer
+            from sumy.summarizers.text_rank import TextRankSummarizer
+            
+            self._parser_class = PlaintextParser
+            self._tokenizer_class = Tokenizer
+            self._summarizer_class = TextRankSummarizer
+            self._initialized = True
+        except ImportError:
+            self._initialized = False
+    
+    def summarize(self, text: str, max_sentences: int = 3) -> str:
+        """Generate summary using TextRank algorithm."""
+        if not self._initialized:
+            # Fallback to LexRank
+            fallback = SumySummaryGenerator(language=self.language)
+            return fallback.summarize(text, max_sentences)
+        
+        if not text or not text.strip():
+            return ""
+        
+        try:
+            # Reuse cleaning logic from SumySummaryGenerator
+            base_generator = SumySummaryGenerator(language=self.language)
+            cleaned_text = base_generator._clean_text(text)
+            
+            if not cleaned_text:
+                return ""
+            
+            parser = self._parser_class.from_string(
+                cleaned_text,
+                self._tokenizer_class(self.language)
+            )
+            
+            doc_sentences = len(parser.document.sentences)
+            if doc_sentences < 3:
+                return base_generator.summarize(text, max_sentences)
+            
+            optimal_sentences = min(max_sentences, max(2, int(doc_sentences * 0.15)))
+            
+            summarizer = self._summarizer_class()
+            summary_sentences = summarizer(parser.document, optimal_sentences)
+            
+            summary_parts = []
+            for sentence in summary_sentences:
+                sentence_str = str(sentence).strip()
+                if sentence_str:
+                    sentence_str = sentence_str.replace('\n', ' ').replace('\r', ' ')
+                    sentence_str = ' '.join(sentence_str.split())
+                    if not sentence_str[-1] in '.!?':
+                        sentence_str += '.'
+                    summary_parts.append(sentence_str)
+            
+            summary = ' '.join(summary_parts)
+            summary = summary.replace('\n', ' ').replace('\r', ' ')
+            
+            import re
+            summary = re.sub(r'\.([A-ZÅÄÖ])', r'. \1', summary)
+            summary = ' '.join(summary.split())
+            
+            return summary.strip()
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"TextRank summarization error: {e}")
+            fallback = SumySummaryGenerator(language=self.language)
+            return fallback.summarize(text, max_sentences)
+
+
 def create_summarizer(summarizer_type: str = "sumy", **kwargs) -> SummaryGenerator:
     """
     Factory function to create summary generators.
     Follows Open/Closed Principle - easy to extend with new summarizer types.
     
     Args:
-        summarizer_type: Type of summarizer ('sumy' or 'simple')
+        summarizer_type: Type of summarizer:
+            - 'sumy': LexRank extractive (current default)
+            - 'textrank': TextRank extractive (alternative extractive)
+            - 'openai': OpenAI GPT abstractive (best quality, requires API key)
+            - 'huggingface': Hugging Face transformers abstractive (free, local)
+            - 'simple': Simple rule-based fallback
         **kwargs: Additional arguments for summarizer
         
     Returns:
@@ -262,10 +553,16 @@ def create_summarizer(summarizer_type: str = "sumy", **kwargs) -> SummaryGenerat
     """
     if summarizer_type == "sumy":
         return SumySummaryGenerator(**kwargs)
+    elif summarizer_type == "textrank":
+        return TextRankSummaryGenerator(**kwargs)
+    elif summarizer_type == "openai":
+        return OpenAISummaryGenerator(**kwargs)
+    elif summarizer_type == "huggingface":
+        return HuggingFaceSummaryGenerator(**kwargs)
     elif summarizer_type == "simple":
         return SimpleSummaryGenerator()
     else:
-        raise ValueError(f"Unknown summarizer type: {summarizer_type}")
+        raise ValueError(f"Unknown summarizer type: {summarizer_type}. Options: 'sumy', 'textrank', 'openai', 'huggingface', 'simple'")
 
 
 class SimpleSummaryGenerator(SummaryGenerator):

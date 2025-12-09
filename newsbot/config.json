@@ -1,5 +1,10 @@
 {
   "base_url": "https://marcusoscarsson.se",
-  "categories": ["ekonomi", "sverige"]
+  "categories": ["ekonomi", "sverige"],
+  "summarizer": {
+    "type": "openai",
+    "language": "sv",
+    "max_sentences": 4
+  }
 }
 
