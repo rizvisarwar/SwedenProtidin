@@ -4,6 +4,65 @@ Automated Swedish News to Facebook Bot
 Fetches news from scrape_news.py (Ekonomi and Sverige categories), translates to Bangla, and posts to Facebook Page.
 """
 
+# Compatibility fix for Python 3.13+ where cgi module was removed
+# googletrans may try to import cgi.parse_header, so we provide a shim
+def _create_parse_header():
+    """Create parse_header function for cgi compatibility."""
+    def parse_header(line):
+        """Parse a Content-Type like header."""
+        if ';' in line:
+            main, params = line.split(';', 1)
+            main = main.strip()
+            param_dict = {}
+            for param in params.split(';'):
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    param_dict[key.strip()] = value.strip().strip('"\'')
+            return main, param_dict
+        return line.strip(), {}
+    return parse_header
+
+try:
+    import cgi
+    # cgi exists but may be deprecated - that's fine
+    # Ensure parse_header exists (some Python versions may not have it accessible)
+    if not hasattr(cgi, 'parse_header'):
+        cgi.parse_header = _create_parse_header()
+    # Also ensure it's callable (in case of access issues)
+    if not callable(getattr(cgi, 'parse_header', None)):
+        cgi.parse_header = _create_parse_header()
+except ImportError:
+    # Create a minimal cgi module shim for compatibility (Python 3.13+)
+    import sys
+    from urllib.parse import parse_qs, unquote
+    
+    class cgi:
+        @staticmethod
+        def parse_qs(qs, keep_blank_values=False, strict_parsing=False):
+            return parse_qs(qs, keep_blank_values=keep_blank_values, strict_parsing=strict_parsing)
+        
+        @staticmethod
+        def unquote(s):
+            return unquote(s)
+        
+        @staticmethod
+        def parse_header(line):
+            """Parse a Content-Type like header."""
+            if ';' in line:
+                main, params = line.split(';', 1)
+                main = main.strip()
+                param_dict = {}
+                for param in params.split(';'):
+                    if '=' in param:
+                        key, value = param.split('=', 1)
+                        param_dict[key.strip()] = value.strip().strip('"\'')
+                return main, param_dict
+            return line.strip(), {}
+    
+    sys.modules['cgi'] = cgi
+    # Also set parse_header as a module-level function for compatibility
+    cgi.parse_header = _create_parse_header()
+
 import json
 import os
 import requests
@@ -75,11 +134,68 @@ def save_posted_article(url):
 
 
 
-def translate_text(text, dest='bn'):
-    """Translate text to Bangla using googletrans."""
+def translate_text(text, dest='bn', use_openai=True):
+    """
+    Translate text to Bangla.
+    
+    Uses OpenAI for better quality translation, with googletrans as fallback.
+    
+    Args:
+        text: Text to translate
+        dest: Destination language (default: 'bn' for Bangla)
+        use_openai: If True, try OpenAI first (better quality), then fallback to googletrans
+    
+    Returns:
+        Translated text, or original if translation fails
+    """
     if not text or not text.strip():
         return ""
     
+    # Try OpenAI translation first (if enabled and API key available)
+    if use_openai:
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if api_key:
+            try:
+                import requests
+                url = "https://api.openai.com/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                # Truncate if too long (titles are usually short, but be safe)
+                text_to_translate = text[:500] if len(text) > 500 else text
+                
+                prompt = f"Translate the following Swedish text to Bangla (Bengali). Only return the translation, nothing else.\n\n{text_to_translate}"
+                
+                data = {
+                    "model": "gpt-3.5-turbo",
+                    "messages": [
+                        {"role": "system", "content": "You are a professional translator. Translate Swedish text to Bangla (Bengali) accurately and naturally."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": 150,
+                    "temperature": 0.3,  # Lower temperature for more accurate translation
+                }
+                
+                response = requests.post(url, headers=headers, json=data, timeout=10)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    translated = result['choices'][0]['message']['content'].strip()
+                    # Remove quotes if OpenAI wrapped the translation
+                    if translated.startswith('"') and translated.endswith('"'):
+                        translated = translated[1:-1]
+                    if translated.startswith("'") and translated.endswith("'"):
+                        translated = translated[1:-1]
+                    logger.debug("Title translated using OpenAI")
+                    return translated
+                # If OpenAI fails, fall through to googletrans
+            except Exception as e:
+                logger.debug(f"OpenAI translation failed, using googletrans fallback: {e}")
+                # Fall through to googletrans
+    
+    # Fallback to googletrans (free, but lower quality)
     try:
         # Remove extra whitespace
         text = ' '.join(text.split())
@@ -88,6 +204,7 @@ def translate_text(text, dest='bn'):
             text = text[:8000]
         
         result = translator.translate(text, dest=dest)
+        logger.debug("Title translated using googletrans (fallback)")
         return result.text
     except Exception as e:
         logger.warning(f"Translation failed: {e}")
@@ -209,8 +326,8 @@ def main():
             continue
         
         try:
-            # Translate title to Bangla (always needed)
-            title_bn = translate_text(title_sv, dest='bn')
+            # Translate title to Bangla using OpenAI (better quality) with googletrans fallback
+            title_bn = translate_text(title_sv, dest='bn', use_openai=True)
             if not title_bn:
                 title_bn = title_sv  # Fallback to original
             
@@ -236,8 +353,9 @@ def main():
                     summary_bn = summary_sv
                     logger.info("Using Bangla summary generated directly by OpenAI")
                 else:
-                    # Need to translate from Swedish to Bangla
-                    summary_bn = translate_text(summary_sv, dest='bn')
+                    # Need to translate from Swedish to Bangla (fallback case - should rarely happen)
+                    # Use OpenAI for better quality, with googletrans as fallback
+                    summary_bn = translate_text(summary_sv, dest='bn', use_openai=True)
                     if not summary_bn:
                         summary_bn = summary_sv  # Fallback to original
             

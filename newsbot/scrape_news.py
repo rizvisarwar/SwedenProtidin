@@ -283,7 +283,16 @@ def parse_article_page(url, summarizer=None):
         # Use 4 sentences for better context (can be adjusted)
         summary = ""
         if content_text and len(content_text) > 100:  # Only summarize if substantial content
-            summary = summarizer.summarize(content_text, max_sentences=4)
+            try:
+                summary = summarizer.summarize(content_text, max_sentences=4)
+            except ValueError as e:
+                # API key or rate limit errors - log and continue without summary
+                print(f"Warning: Could not generate summary: {e}")
+                summary = ""
+            except Exception as e:
+                # Other errors - log and continue without summary
+                print(f"Warning: Summary generation failed: {e}")
+                summary = ""
 
         return {
             "title_sv": title,

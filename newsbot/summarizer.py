@@ -340,6 +340,27 @@ Sammanfattning:"""
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=30)
+            
+            # Check for specific error codes
+            if response.status_code == 401:
+                error_msg = "OpenAI API key is invalid, expired, or revoked"
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        error_msg += f": {error_data['error'].get('message', '')}"
+                except:
+                    pass
+                raise ValueError(error_msg)
+            elif response.status_code == 429:
+                error_msg = "OpenAI API rate limit exceeded"
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        error_msg += f": {error_data['error'].get('message', '')}"
+                except:
+                    pass
+                raise ValueError(error_msg)
+            
             response.raise_for_status()
             
             result = response.json()
@@ -347,6 +368,12 @@ Sammanfattning:"""
             
             return summary
             
+        except ValueError as e:
+            # Re-raise ValueError (API key or rate limit issues)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"OpenAI API error: {e}")
+            raise
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
