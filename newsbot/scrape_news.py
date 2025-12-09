@@ -47,26 +47,45 @@ else:
     SCRAPE_URLS = [f"{BASE_URL}/category/ekonomi/"]
     USE_URLS = False
 
-# Initialize summarizer (Dependency Injection - follows SOLID principles)
+# Summarizer configuration (lazy initialization - only created when needed)
 # Read summarizer config from config.json
 _summarizer_config = config.get("summarizer", {})
 _summarizer_type = _summarizer_config.get("type", "sumy")
 _summarizer_language = _summarizer_config.get("language", "sv")
 _summarizer_output_language = _summarizer_config.get("output_language")  # Optional: target language for summary
-_summarizer_kwargs = {}
+_summarizer = None  # Will be initialized lazily when first needed
 
-# Only add language parameter for summarizers that support it (not OpenAI)
-if _summarizer_type in ["sumy", "textrank", "huggingface"]:
-    _summarizer_kwargs["language"] = _summarizer_language
-
-# Add OpenAI-specific parameters
-if _summarizer_type == "openai":
-    _summarizer_kwargs["api_key"] = os.environ.get("OPENAI_API_KEY")
-    # If output_language is specified, OpenAI can generate summary directly in that language
-    if _summarizer_output_language:
-        _summarizer_kwargs["output_language"] = _summarizer_output_language
-
-_summarizer = create_summarizer(_summarizer_type, **_summarizer_kwargs)
+def _get_summarizer():
+    """
+    Get or create the summarizer instance (lazy initialization).
+    This allows scraping to work without requiring API keys upfront.
+    Returns None if summarizer cannot be created (e.g., missing API key).
+    """
+    global _summarizer
+    if _summarizer is None:
+        try:
+            _summarizer_kwargs = {}
+            
+            # Only add language parameter for summarizers that support it (not OpenAI)
+            if _summarizer_type in ["sumy", "textrank", "huggingface"]:
+                _summarizer_kwargs["language"] = _summarizer_language
+            
+            # Add OpenAI-specific parameters
+            if _summarizer_type == "openai":
+                _summarizer_kwargs["api_key"] = os.environ.get("OPENAI_API_KEY")
+                # If output_language is specified, OpenAI can generate summary directly in that language
+                if _summarizer_output_language:
+                    _summarizer_kwargs["output_language"] = _summarizer_output_language
+            
+            _summarizer = create_summarizer(_summarizer_type, **_summarizer_kwargs)
+        except ValueError as e:
+            # API key missing or other configuration error - return None
+            # This allows scraping to continue without summaries
+            return None
+        except Exception as e:
+            # Other errors - return None to allow scraping to continue
+            return None
+    return _summarizer
 
 HEADERS = {
     "User-Agent": (
@@ -233,7 +252,7 @@ def parse_article_page(url, summarizer=None):
         Dictionary with title, content, and summary
     """
     if summarizer is None:
-        summarizer = _summarizer
+        summarizer = _get_summarizer()
     
     try:
         html = fetch_html(url)
@@ -284,24 +303,28 @@ def parse_article_page(url, summarizer=None):
         summary = ""
         if content_text and len(content_text) > 100:  # Only summarize if substantial content
             try:
-                summary = summarizer.summarize(content_text, max_sentences=4)
+                # Try to get summarizer (may return None if API key missing)
+                summarizer_instance = summarizer if summarizer else _get_summarizer()
+                if summarizer_instance:
+                    summary = summarizer_instance.summarize(content_text, max_sentences=4)
+                # If summarizer is None, summary remains empty (scraping continues)
             except ValueError as e:
-                # API key or rate limit errors - log and continue without summary
-                print(f"Warning: Could not generate summary: {e}")
-                summary = ""
+                # API key or rate limit errors - continue without summary
+                summary = ""  # Continue without summary
             except Exception as e:
-                # Other errors - log and continue without summary
-                print(f"Warning: Summary generation failed: {e}")
-                summary = ""
+                # Other errors - continue without summary
+                summary = ""  # Continue without summary
 
         return {
             "title_sv": title,
+            "content_sv": content_text,  # Include full scraped content
             "summary_sv": summary
         }
     except Exception as e:
         print(f"Error parsing article {url}: {e}")
         return {
             "title_sv": None,
+            "content_sv": "",
             "summary_sv": ""
         }
 
