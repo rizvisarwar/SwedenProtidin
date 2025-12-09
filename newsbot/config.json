@@ -4,6 +4,7 @@
   "summarizer": {
     "type": "openai",
     "language": "sv",
+    "output_language": "bn",
     "max_sentences": 4
   }
 }

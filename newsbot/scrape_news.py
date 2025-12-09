@@ -39,15 +39,19 @@ else:
 _summarizer_config = config.get("summarizer", {})
 _summarizer_type = _summarizer_config.get("type", "sumy")
 _summarizer_language = _summarizer_config.get("language", "sv")
+_summarizer_output_language = _summarizer_config.get("output_language")  # Optional: target language for summary
 _summarizer_kwargs = {}
 
 # Only add language parameter for summarizers that support it (not OpenAI)
 if _summarizer_type in ["sumy", "textrank", "huggingface"]:
     _summarizer_kwargs["language"] = _summarizer_language
 
-# Add OpenAI API key if using OpenAI summarizer
+# Add OpenAI-specific parameters
 if _summarizer_type == "openai":
     _summarizer_kwargs["api_key"] = os.environ.get("OPENAI_API_KEY")
+    # If output_language is specified, OpenAI can generate summary directly in that language
+    if _summarizer_output_language:
+        _summarizer_kwargs["output_language"] = _summarizer_output_language
 
 _summarizer = create_summarizer(_summarizer_type, **_summarizer_kwargs)
 

@@ -209,17 +209,37 @@ def main():
             continue
         
         try:
-            # Translate title to Bangla
+            # Translate title to Bangla (always needed)
             title_bn = translate_text(title_sv, dest='bn')
             if not title_bn:
                 title_bn = title_sv  # Fallback to original
             
-            # Translate summary to Bangla
+            # Check if summary is already in Bangla (if OpenAI generated it directly)
+            # Check config to see if output_language is set to 'bn'
+            import json
+            config_file = os.path.join(os.path.dirname(__file__), 'config.json')
+            summary_already_bangla = False
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    summarizer_config = config.get("summarizer", {})
+                    if summarizer_config.get("output_language") == "bn" and summarizer_config.get("type") == "openai":
+                        summary_already_bangla = True
+            except:
+                pass  # If config read fails, assume we need to translate
+            
+            # Translate summary to Bangla (only if not already in Bangla)
             summary_bn = ""
             if summary_sv:
-                summary_bn = translate_text(summary_sv, dest='bn')
-                if not summary_bn:
-                    summary_bn = summary_sv  # Fallback to original
+                if summary_already_bangla:
+                    # Summary is already in Bangla from OpenAI
+                    summary_bn = summary_sv
+                    logger.info("Using Bangla summary generated directly by OpenAI")
+                else:
+                    # Need to translate from Swedish to Bangla
+                    summary_bn = translate_text(summary_sv, dest='bn')
+                    if not summary_bn:
+                        summary_bn = summary_sv  # Fallback to original
             
             # Format Facebook post
             fb_message = format_facebook_post(

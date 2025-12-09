@@ -255,7 +255,7 @@ class OpenAISummaryGenerator(SummaryGenerator):
     Produces natural, human-like summaries that are more engaging than extractive methods.
     """
     
-    def __init__(self, model: str = "gpt-3.5-turbo", api_key: str = None, max_tokens: int = 150):
+    def __init__(self, model: str = "gpt-3.5-turbo", api_key: str = None, max_tokens: int = 150, output_language: str = None):
         """
         Initialize OpenAI summarizer.
         
@@ -263,10 +263,13 @@ class OpenAISummaryGenerator(SummaryGenerator):
             model: OpenAI model to use ('gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview')
             api_key: OpenAI API key (if None, uses OPENAI_API_KEY env var)
             max_tokens: Maximum tokens in summary (default: 150 for ~2-3 sentences)
+            output_language: Target language for summary (e.g., 'bn' for Bangla, 'sv' for Swedish)
+                           If None, summary will be in the same language as input
         """
         self.model = model
         self.api_key = api_key or os.environ.get('OPENAI_API_KEY')
         self.max_tokens = max_tokens
+        self.output_language = output_language
         
         if not self.api_key:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
@@ -302,8 +305,22 @@ class OpenAISummaryGenerator(SummaryGenerator):
                 "Content-Type": "application/json"
             }
             
-            # Prompt optimized for Swedish news articles - asks for engaging, readable summary
-            prompt = f"""Sammanfatta följande nyhetsartikel på ett engagerande och lättläst sätt. 
+            # Build prompt based on output language
+            if self.output_language == 'bn':
+                # Generate summary directly in Bangla
+                system_message = "You are an expert at summarizing news articles in an engaging way. Always respond in Bangla (Bengali) language."
+                prompt = f"""নিম্নলিখিত সংবাদ নিবন্ধটি একটি আকর্ষণীয় এবং সহজে পড়া যায় এমন উপায়ে সংক্ষিপ্ত করুন। 
+সবচেয়ে গুরুত্বপূর্ণ পয়েন্টগুলিতে ফোকাস করুন এবং সারসংক্ষেপটি পাঠকদের জন্য আকর্ষণীয় করুন।
+স্পষ্ট এবং সহজ ভাষা ব্যবহার করুন।
+
+নিবন্ধ:
+{text}
+
+সারসংক্ষেপ:"""
+            else:
+                # Generate summary in Swedish (default)
+                system_message = "Du är en expert på att sammanfatta nyhetsartiklar på ett engagerande sätt."
+                prompt = f"""Sammanfatta följande nyhetsartikel på ett engagerande och lättläst sätt. 
 Fokusera på de viktigaste punkterna och gör sammanfattningen intressant för läsare.
 Använd klart och tydligt språk.
 
@@ -315,7 +332,7 @@ Sammanfattning:"""
             data = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "Du är en expert på att sammanfatta nyhetsartiklar på ett engagerande sätt."},
+                    {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt}
                 ],
                 "max_tokens": target_tokens,
