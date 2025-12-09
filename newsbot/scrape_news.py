@@ -18,7 +18,7 @@ def load_config():
         # Default fallback configuration
         return {
             "base_url": "https://marcusoscarsson.se",
-            "categories": ["ekonomi", "sverige"]
+            "urls": ["https://marcusoscarsson.se/sverige/"]
         }
     except json.JSONDecodeError:
         print(f"Error: Invalid JSON in {CONFIG_FILE}")
@@ -26,13 +26,26 @@ def load_config():
 
 config = load_config()
 BASE_URL = config.get("base_url", "https://marcusoscarsson.se")
-# Support both old "category" (single) and new "categories" (list) for backward compatibility
-if "categories" in config:
+
+# Support URL-based scraping (new) and category-based scraping (backward compatibility)
+if "urls" in config:
+    # New: Use list of URLs directly
+    SCRAPE_URLS = config["urls"]
+    USE_URLS = True
+elif "categories" in config:
+    # Old: Build URLs from categories
     CATEGORIES = config["categories"]
+    SCRAPE_URLS = [f"{BASE_URL}/category/{cat}/" for cat in CATEGORIES]
+    USE_URLS = False
 elif "category" in config:
+    # Old: Single category
     CATEGORIES = [config["category"]]
+    SCRAPE_URLS = [f"{BASE_URL}/category/{CATEGORIES[0]}/"]
+    USE_URLS = False
 else:
-    CATEGORIES = ["ekonomi"]  # default fallback
+    # Default fallback
+    SCRAPE_URLS = [f"{BASE_URL}/category/ekonomi/"]
+    USE_URLS = False
 
 # Initialize summarizer (Dependency Injection - follows SOLID principles)
 # Read summarizer config from config.json
@@ -86,35 +99,118 @@ def parse_category_page(html, category_name=None):
     """
     soup = BeautifulSoup(html, "html.parser")
     articles = []
+    seen_urls = set()  # Track seen URLs to avoid duplicates
 
-    # Try several possible selectors
+    # Try several possible selectors (in order of preference)
     selectors = [
         "article h2 a",
         "h2.entry-title a",
         ".post h2 a",
         ".post-title a",
-        "h2 a"
+        "h2 a",
+        ".post-preview-image a",  # For Sverige page structure
+        "div.post-preview a",  # Alternative structure
     ]
 
     links = []
     for sel in selectors:
         found = soup.select(sel)
-        if found:
+        if found and len(found) > 0:  # Make sure we actually found links
             links = found
             break
+    
+    # Special handling for .post-preview-image structure (Sverige page)
+    # In this structure, the image link has no text, but there's a sibling link with the title
+    if links and all(not link.get_text(strip=True) for link in links[:3]):
+        # Links have no text, look for title in sibling elements
+        processed_links = []
+        for link in links:
+            url = link.get("href", "")
+            if not url:
+                continue
+            
+            # Find the container (posts-header)
+            container = link.find_parent(class_="posts-header")
+            if container:
+                # Find the title link (post-link) or h4 in the container
+                title_link = container.find('a', class_="post-link")
+                if title_link:
+                    # Get title from h4 inside the link, or from link text
+                    h4 = title_link.find('h4')
+                    if h4:
+                        title = h4.get_text(strip=True)
+                    else:
+                        title = title_link.get_text(strip=True)
+                    # Use the URL from title_link if available, otherwise use image link URL
+                    url = title_link.get("href", url)
+                else:
+                    # Try finding h4 directly
+                    h4 = container.find('h4')
+                    if h4:
+                        title = h4.get_text(strip=True)
+                    else:
+                        continue
+            else:
+                continue
+            
+            if title and url:
+                processed_links.append((title, url))
+        
+        links = processed_links
+    else:
+        # Standard structure - links have text
+        processed_links = []
+        for link in links:
+            title = link.get_text(strip=True)
+            url = link.get("href")
+            if title and url:
+                processed_links.append((title, url))
+        links = processed_links
+    
+    # If still no links found, try finding all article links manually
+    if not links:
+        all_links = soup.find_all('a', href=True)
+        for link in all_links:
+            href = link.get('href', '')
+            text = link.get_text(strip=True)
+            
+            # Filter for article links (has meaningful text, is article URL, not category/nav)
+            if (text and len(text) > 10 and
+                'marcusoscarsson.se' in href and
+                href != 'https://marcusoscarsson.se' and
+                not href.endswith('/sverige/') and
+                not href.endswith('/ekonomi/') and
+                not href.endswith('/varlden/') and
+                not href.endswith('/usa/') and
+                not href.endswith('/om/') and
+                '/category/' not in href):
+                links.append((text, href))
 
-    for link in links:
-        title = link.get_text(strip=True)
-        url = link.get("href")
+    # Process links (now they're tuples of (title, url) or link objects)
+    for item in links:
+        if isinstance(item, tuple):
+            title, url = item
+        else:
+            title = item.get_text(strip=True)
+            url = item.get("href")
 
-        if not url:
+        if not url or not title:
             continue
 
+        # Normalize URL
         if not url.startswith("http"):
             url = BASE_URL + url
+        
+        # Remove trailing slash for consistency
+        url = url.rstrip('/')
+        
+        # Skip if already seen
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
 
         article = {
-            "title_sv": title,
+            "title_sv": title.strip(),
             "url": url
         }
         if category_name:
@@ -202,33 +298,41 @@ def parse_article_page(url, summarizer=None):
 
 def scrape_news():
     """
-    Scrape articles from multiple categories (Ekonomi and Sverige).
-    Combines articles from all configured categories.
+    Scrape articles from a list of URLs or categories.
+    Supports both URL-based scraping (new) and category-based scraping (backward compatible).
     """
     all_articles = []
     
-    # Fetch articles from each category
-    for category in CATEGORIES:
-        category_url = f"{BASE_URL}/category/{category}/"
-        print(f"Fetching articles from category: {category}")
+    # Fetch articles from each URL
+    for url in SCRAPE_URLS:
+        # Extract category/source name from URL for metadata
+        if USE_URLS:
+            # Extract name from URL (e.g., "sverige" from "https://marcusoscarsson.se/sverige/")
+            url_parts = url.rstrip('/').split('/')
+            source_name = url_parts[-1].capitalize() if url_parts else "News"
+            print(f"Fetching articles from URL: {url}")
+        else:
+            # Legacy category-based: extract category name from URL
+            source_name = url.split('/category/')[-1].rstrip('/').capitalize() if '/category/' in url else "News"
+            print(f"Fetching articles from category: {source_name}")
         
         try:
-            category_html = fetch_html(category_url)
-            articles = parse_category_page(category_html, category_name=category.capitalize())
+            page_html = fetch_html(url)
+            articles = parse_category_page(page_html, category_name=source_name)
             all_articles.extend(articles)
         except Exception as e:
-            print(f"Error fetching category {category}: {e}")
+            print(f"Error fetching URL {url}: {e}")
             continue
     
-    # Determine category display name(s)
-    if len(CATEGORIES) == 1:
-        category_display = CATEGORIES[0].capitalize()
+    # Build metadata
+    if USE_URLS:
+        sources = [url.rstrip('/').split('/')[-1].capitalize() for url in SCRAPE_URLS]
     else:
-        category_display = ", ".join(c.capitalize() for c in CATEGORIES)
+        sources = [url.split('/category/')[-1].rstrip('/').capitalize() for url in SCRAPE_URLS if '/category/' in url]
     
     scraped_output = {
         "source": "marcusoscarsson.se",
-        "categories": [c.capitalize() for c in CATEGORIES],
+        "sources": sources if sources else ["News"],
         "scraped_at": datetime.now(timezone.utc).isoformat(),
         "articles": []
     }

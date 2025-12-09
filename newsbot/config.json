@@ -1,6 +1,8 @@
 {
   "base_url": "https://marcusoscarsson.se",
-  "categories": ["ekonomi", "sverige"],
+  "urls": [
+    "https://marcusoscarsson.se/sverige/"
+  ],
   "summarizer": {
     "type": "openai",
     "language": "sv",

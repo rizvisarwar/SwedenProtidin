@@ -166,8 +166,8 @@ def main():
     posted_articles = load_posted_articles()
     logger.info(f"Loaded {len(posted_articles)} previously posted articles")
     
-    # Scrape news from multiple categories
-    logger.info("Scraping news from marcusoscarsson.se (Ekonomi and Sverige categories)...")
+    # Scrape news from configured URLs
+    logger.info("Scraping news from marcusoscarsson.se...")
     try:
         scraped_data = scrape_news()
         all_articles = scraped_data.get('articles', [])
