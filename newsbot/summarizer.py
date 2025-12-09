@@ -251,8 +251,10 @@ class SumySummaryGenerator(SummaryGenerator):
 
 class OpenAISummaryGenerator(SummaryGenerator):
     """
-    Abstractive summarization using OpenAI GPT models.
-    Produces natural, human-like summaries that are more engaging than extractive methods.
+    Content generation using OpenAI GPT models.
+    - If output_language is 'bn': Generates full professional news articles in Bangla
+    - Otherwise: Generates summaries
+    Produces natural, human-like content that feels professional and engaging.
     """
     
     def __init__(self, model: str = "gpt-3.5-turbo", api_key: str = None, max_tokens: int = 150, output_language: str = None):
@@ -276,14 +278,16 @@ class OpenAISummaryGenerator(SummaryGenerator):
     
     def summarize(self, text: str, max_sentences: int = 3) -> str:
         """
-        Generate abstractive summary using OpenAI GPT.
+        Generate content using OpenAI GPT.
+        - If output_language is 'bn': Generates full news article in Bangla
+        - Otherwise: Generates summary
         
         Args:
-            text: Input text to summarize
-            max_sentences: Target number of sentences (used to estimate max_tokens)
+            text: Input text (Swedish news article)
+            max_sentences: Target number of sentences (used for summaries only)
             
         Returns:
-            Natural, engaging summary text
+            Full news article in Bangla (if output_language='bn') or summary text
         """
         if not text or not text.strip():
             return ""
@@ -292,12 +296,25 @@ class OpenAISummaryGenerator(SummaryGenerator):
             import requests
             
             # Truncate text if too long (GPT-3.5-turbo has 16k context, but we want to keep it reasonable)
-            # Keep first ~3000 characters to ensure we get the main content
-            if len(text) > 3000:
-                text = text[:3000] + "..."
+            # For full articles, allow more content (up to 5000 chars) to ensure comprehensive coverage
+            # For summaries, keep first ~3000 characters
+            if self.output_language == 'bn':
+                # Full article - allow more content for comprehensive news writing
+                if len(text) > 5000:
+                    text = text[:5000] + "..."
+            else:
+                # Summary - less content needed
+                if len(text) > 3000:
+                    text = text[:3000] + "..."
             
-            # Adjust max_tokens based on max_sentences (roughly 50 tokens per sentence)
-            target_tokens = min(self.max_tokens, max_sentences * 50)
+            # Adjust max_tokens based on output type
+            if self.output_language == 'bn':
+                # For full news articles in Bangla, use more tokens (roughly 100-150 tokens per paragraph)
+                # Default to 800 tokens for a full article (5-8 paragraphs), but allow config override
+                target_tokens = max(self.max_tokens, 800) if self.max_tokens < 800 else self.max_tokens
+            else:
+                # For summaries, use fewer tokens (roughly 50 tokens per sentence)
+                target_tokens = min(self.max_tokens, max_sentences * 50)
             
             url = "https://api.openai.com/v1/chat/completions"
             headers = {
@@ -307,16 +324,24 @@ class OpenAISummaryGenerator(SummaryGenerator):
             
             # Build prompt based on output language
             if self.output_language == 'bn':
-                # Generate summary directly in Bangla
-                system_message = "You are an expert at summarizing news articles in an engaging way. Always respond in Bangla (Bengali) language."
-                prompt = f"""নিম্নলিখিত সংবাদ নিবন্ধটি একটি আকর্ষণীয় এবং সহজে পড়া যায় এমন উপায়ে সংক্ষিপ্ত করুন। 
-সবচেয়ে গুরুত্বপূর্ণ পয়েন্টগুলিতে ফোকাস করুন এবং সারসংক্ষেপটি পাঠকদের জন্য আকর্ষণীয় করুন।
-স্পষ্ট এবং সহজ ভাষা ব্যবহার করুন।
+                # Generate full news article directly in Bangla
+                system_message = "You are a professional journalist writing for a Bangla news publication. You write clear, engaging, and professional news articles in Bangla (Bengali) that feel natural and are written by a skilled journalist. Always respond in Bangla (Bengali) language."
+                prompt = f"""নিম্নলিখিত সুইডিশ সংবাদ নিবন্ধটি পড়ুন এবং এটি থেকে একটি সম্পূর্ণ সংবাদ নিবন্ধ বাংলায় লিখুন।
 
-নিবন্ধ:
+নির্দেশনা:
+- একটি পেশাদার সাংবাদিকের মতো লিখুন
+- সম্পূর্ণ সংবাদ নিবন্ধ লিখুন, শুধু সারসংক্ষেপ নয়
+- সংবাদের সব গুরুত্বপূর্ণ তথ্য অন্তর্ভুক্ত করুন
+- স্পষ্ট, আকর্ষণীয় এবং পেশাদার ভাষা ব্যবহার করুন
+- বাংলা ভাষাভাষী পাঠকদের জন্য সহজে বোধগম্য করুন
+- সংবাদটি যেন মনে হয় একজন অভিজ্ঞ সাংবাদিক লিখেছেন
+- সংবাদের প্রেক্ষাপট, কারণ, প্রভাব ইত্যাদি অন্তর্ভুক্ত করুন
+- প্রাকৃতিক এবং প্রবাহিত ভাষা ব্যবহার করুন
+
+সুইডিশ সংবাদ নিবন্ধ:
 {text}
 
-সারসংক্ষেপ:"""
+বাংলা সংবাদ নিবন্ধ:"""
             else:
                 # Generate summary in Swedish (default)
                 system_message = "Du är en expert på att sammanfatta nyhetsartiklar på ett engagerande sätt."
@@ -336,7 +361,7 @@ Sammanfattning:"""
                     {"role": "user", "content": prompt}
                 ],
                 "max_tokens": target_tokens,
-                "temperature": 0.7,  # Slightly creative for more engaging summaries
+                "temperature": 0.6 if self.output_language == 'bn' else 0.7,  # Lower temp for professional articles, creative for summaries
             }
             
             response = requests.post(url, headers=headers, json=data, timeout=30)

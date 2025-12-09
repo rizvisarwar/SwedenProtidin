@@ -73,17 +73,23 @@ def _get_summarizer():
             # Add OpenAI-specific parameters
             if _summarizer_type == "openai":
                 _summarizer_kwargs["api_key"] = os.environ.get("OPENAI_API_KEY")
-                # If output_language is specified, OpenAI can generate summary directly in that language
+                # If output_language is specified, OpenAI can generate content directly in that language
+                # If 'bn', generates full news articles; otherwise generates summaries
                 if _summarizer_output_language:
                     _summarizer_kwargs["output_language"] = _summarizer_output_language
+                # Add max_tokens if specified in config (for full articles, should be 800+)
+                if "max_tokens" in _summarizer_config:
+                    _summarizer_kwargs["max_tokens"] = _summarizer_config["max_tokens"]
             
             _summarizer = create_summarizer(_summarizer_type, **_summarizer_kwargs)
         except ValueError as e:
             # API key missing or other configuration error - return None
             # This allows scraping to continue without summaries
+            print(f"Warning: Summarizer initialization failed: {e}. Continuing without article generation.")
             return None
         except Exception as e:
             # Other errors - return None to allow scraping to continue
+            print(f"Error initializing summarizer: {e}. Continuing without article generation.")
             return None
     return _summarizer
 
@@ -298,21 +304,27 @@ def parse_article_page(url, summarizer=None):
             content_text = re.sub(r'\n{3,}', '\n\n', content_text)
             content_text = content_text.strip()
 
-        # Generate summary using AI summarizer
-        # Use 4 sentences for better context (can be adjusted)
+        # Generate news article or summary using AI
+        # If output_language is 'bn', generates full news article in Bangla
+        # Otherwise generates summary
         summary = ""
-        if content_text and len(content_text) > 100:  # Only summarize if substantial content
+        if content_text and len(content_text) > 100:  # Only process if substantial content
             try:
                 # Try to get summarizer (may return None if API key missing)
                 summarizer_instance = summarizer if summarizer else _get_summarizer()
                 if summarizer_instance:
                     summary = summarizer_instance.summarize(content_text, max_sentences=4)
-                # If summarizer is None, summary remains empty (scraping continues)
+                    if not summary:
+                        print(f"Warning: Summarizer returned empty result for article: {url}")
+                else:
+                    print(f"Warning: Summarizer is None (API key may be missing). Cannot generate article for: {url}")
             except ValueError as e:
                 # API key or rate limit errors - continue without summary
+                print(f"Warning: Could not generate article (ValueError): {e}")
                 summary = ""  # Continue without summary
             except Exception as e:
                 # Other errors - continue without summary
+                print(f"Warning: Article generation failed: {e}")
                 summary = ""  # Continue without summary
 
         return {

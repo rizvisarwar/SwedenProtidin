@@ -291,7 +291,7 @@ def format_output(articles, output_lang, save_to_file=False, show_stats=True, sh
 def main():
     parser = argparse.ArgumentParser(description='Test Bangla text generation without posting to Facebook')
     parser.add_argument('--save', '-s', action='store_true', help='Save output to file')
-    parser.add_argument('--output', '-o', type=str, default='bangla_test_output.txt', help='Output file name (default: bangla_test_output.txt)')
+    parser.add_argument('--output', '-o', type=str, default='tests/output/bangla_test_output.txt', help='Output file name (default: tests/output/bangla_test_output.txt)')
     parser.add_argument('--no-stats', action='store_true', help='Hide statistics')
     parser.add_argument('--truncate', action='store_true', help='Show truncated summaries (first 200 chars)')
     parser.add_argument('--limit', '-l', type=int, default=5, help='Limit number of articles to show (default: 5)')

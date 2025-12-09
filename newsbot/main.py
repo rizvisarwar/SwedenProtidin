@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Automated Swedish News to Facebook Bot
-Fetches news from scrape_news.py (Ekonomi and Sverige categories), translates to Bangla, and posts to Facebook Page.
+Fetches news from scrape_news.py, generates full news articles in Bangla using OpenAI, and posts to Facebook Page.
 """
 
 # Compatibility fix for Python 3.13+ where cgi module was removed
@@ -216,7 +216,7 @@ def translate_text(text, dest='bn', use_openai=True):
 def format_facebook_post(title_bn, summary_bn, link):
     """
     Format the Facebook post message.
-    New format: Bangla summary text + source link
+    New format: Bangla news article text + source link
     """
     post = ""
     
@@ -279,6 +279,13 @@ def main():
         logger.error("  - FB_PAGE_TOKEN")
         return
     
+    # Check OpenAI API key (required for article generation)
+    openai_key = os.environ.get('OPENAI_API_KEY')
+    if not openai_key:
+        logger.error("WARNING: OPENAI_API_KEY not set. Articles will not be generated, only links will be posted.")
+    else:
+        logger.info(f"OPENAI_API_KEY is set (length: {len(openai_key)} characters)")
+    
     # Load posted articles database
     posted_articles = load_posted_articles()
     logger.info(f"Loaded {len(posted_articles)} previously posted articles")
@@ -321,6 +328,13 @@ def main():
         title_sv = article.get('title_sv', '')
         summary_sv = article.get('summary_sv', '')
         
+        # Debug: Log what we got from scraping
+        logger.info(f"Article summary_sv length: {len(summary_sv)} characters")
+        if summary_sv:
+            logger.info(f"Article summary_sv preview: {summary_sv[:200]}...")
+        else:
+            logger.warning(f"Article summary_sv is EMPTY - article generation may have failed")
+        
         if not title_sv:
             logger.warning("Article missing title, skipping...")
             continue
@@ -331,33 +345,49 @@ def main():
             if not title_bn:
                 title_bn = title_sv  # Fallback to original
             
-            # Check if summary is already in Bangla (if OpenAI generated it directly)
+            # Check if content is already in Bangla (if OpenAI generated it directly)
             # Check config to see if output_language is set to 'bn'
             import json
             config_file = os.path.join(os.path.dirname(__file__), 'config.json')
-            summary_already_bangla = False
+            content_already_bangla = False
             try:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     summarizer_config = config.get("summarizer", {})
                     if summarizer_config.get("output_language") == "bn" and summarizer_config.get("type") == "openai":
-                        summary_already_bangla = True
+                        content_already_bangla = True
             except:
                 pass  # If config read fails, assume we need to translate
             
-            # Translate summary to Bangla (only if not already in Bangla)
+            # Get Bangla news article (or summary if fallback)
             summary_bn = ""
             if summary_sv:
-                if summary_already_bangla:
-                    # Summary is already in Bangla from OpenAI
+                if content_already_bangla:
+                    # Content is already a full news article in Bangla from OpenAI
                     summary_bn = summary_sv
-                    logger.info("Using Bangla summary generated directly by OpenAI")
+                    logger.info(f"Using Bangla news article generated directly by OpenAI (length: {len(summary_bn)} chars)")
                 else:
                     # Need to translate from Swedish to Bangla (fallback case - should rarely happen)
                     # Use OpenAI for better quality, with googletrans as fallback
                     summary_bn = translate_text(summary_sv, dest='bn', use_openai=True)
                     if not summary_bn:
                         summary_bn = summary_sv  # Fallback to original
+            else:
+                logger.error(f"ERROR: No summary/article generated for: {title_sv[:50]}... (summary_sv is empty). Check if OPENAI_API_KEY is set and summarizer is working.")
+            
+            # Check if we have article text to post - skip if empty
+            if not summary_bn or not summary_bn.strip():
+                logger.error(f"ERROR: summary_bn is empty! Cannot post article without text. Skipping: {title_sv[:50]}...")
+                logger.error(f"  This usually means:")
+                logger.error(f"  1. OPENAI_API_KEY is not set or invalid")
+                logger.error(f"  2. Article generation failed (check logs above for errors)")
+                logger.error(f"  3. Summarizer returned empty result")
+                skipped_count += 1
+                continue  # Skip this article and move to next one
+            
+            # Debug: Log what we're about to post
+            logger.info(f"Bangla article length: {len(summary_bn)} characters")
+            logger.info(f"Bangla article preview: {summary_bn[:200]}...")
             
             # Format Facebook post
             fb_message = format_facebook_post(
@@ -365,6 +395,10 @@ def main():
                 summary_bn,
                 url  # Original URL is used as link
             )
+            
+            # Debug: Log the formatted message
+            logger.info(f"Formatted Facebook message length: {len(fb_message)} characters")
+            logger.info(f"Formatted Facebook message preview: {fb_message[:300]}...")
             
             # Post to Facebook
             logger.info(f"Posting article: {title_sv[:50]}...")
