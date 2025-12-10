@@ -94,9 +94,13 @@ An automated system that fetches Swedish news headlines from RSS feeds, translat
 3. **Click "New repository secret"**
 4. **Add the following secrets:**
    - **Name:** `FB_PAGE_ID`
-     - **Value:** Your Facebook Page ID (from step 1.5)
+     - **Value:** `880794241790973` (or your Facebook Page ID)
    - **Name:** `FB_PAGE_TOKEN`
      - **Value:** Your long-lived Page Access Token (from step 1.4)
+   - **Name:** `OPENAI_API_KEY`
+     - **Value:** Your OpenAI API key (required for article generation)
+
+📖 **For detailed environment variable setup instructions, see [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)**
 
 ### 3. Local Testing (Optional)
 
@@ -113,17 +117,26 @@ An automated system that fetches Swedish news headlines from RSS feeds, translat
 
 3. **Set environment variables:**
    
-   **Windows (PowerShell):**
+   **Windows (PowerShell) - Quick Setup:**
    ```powershell
-   $env:FB_PAGE_ID="your_page_id"
+   .\scripts\set_env_vars.ps1
+   ```
+   
+   **Windows (PowerShell) - Manual:**
+   ```powershell
+   $env:FB_PAGE_ID="880794241790973"
    $env:FB_PAGE_TOKEN="your_page_token"
+   $env:OPENAI_API_KEY="your_openai_key"
    ```
    
    **Linux/Mac:**
    ```bash
-   export FB_PAGE_ID="your_page_id"
+   export FB_PAGE_ID="880794241790973"
    export FB_PAGE_TOKEN="your_page_token"
+   export OPENAI_API_KEY="your_openai_key"
    ```
+   
+   📖 **For permanent setup and more options, see [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)**
 
 4. **Run the bot:**
    ```bash
