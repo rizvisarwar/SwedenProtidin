@@ -14,7 +14,7 @@ ENV/
 .env.local
 
 # Bot data
-newsbot/posted.json
+# newsbot/posted.json  # Commented out - we want to track this file in git for state persistence
 
 # IDE
 .vscode/

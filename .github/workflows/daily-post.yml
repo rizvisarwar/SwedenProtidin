@@ -37,7 +37,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add newsbot/posted.json
+        git add -f newsbot/posted.json  # Use -f to force add (safety measure)
         git diff --staged --quiet || git commit -m "Update posted articles database [skip ci]"
         git push
 
