@@ -228,6 +228,77 @@ def format_facebook_post(title_bn, summary_bn, link):
     return post
 
 
+def validate_facebook_token():
+    """
+    Validate Facebook Page Access Token and check required permissions.
+    
+    Returns:
+        tuple: (is_valid: bool, error_message: str)
+    """
+    if not FB_PAGE_ID or not FB_PAGE_TOKEN:
+        return False, "Facebook credentials not set (FB_PAGE_ID, FB_PAGE_TOKEN)"
+    
+    # Check token validity and get permissions
+    debug_url = f"https://graph.facebook.com/{FB_API_VERSION}/debug_token"
+    params = {
+        'input_token': FB_PAGE_TOKEN,
+        'access_token': FB_PAGE_TOKEN
+    }
+    
+    try:
+        response = requests.get(debug_url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if 'data' not in result:
+            return False, f"Invalid token response: {result}"
+        
+        data = result['data']
+        
+        # Check if token is valid
+        if not data.get('is_valid', False):
+            error_msg = data.get('error', {}).get('message', 'Token is invalid')
+            return False, f"Token is invalid: {error_msg}"
+        
+        # Check if token is for a page
+        if data.get('type') != 'PAGE':
+            return False, f"Token type is '{data.get('type', 'unknown')}', expected 'PAGE'. Please use a Page Access Token, not a User Access Token."
+        
+        # Check if token is for the correct page
+        token_page_id = str(data.get('profile_id', ''))
+        if token_page_id != str(FB_PAGE_ID):
+            return False, f"Token is for page ID '{token_page_id}', but FB_PAGE_ID is set to '{FB_PAGE_ID}'. They must match."
+        
+        # Get permissions
+        scopes = data.get('scopes', [])
+        required_permissions = ['pages_read_engagement', 'pages_manage_posts']
+        missing_permissions = [perm for perm in required_permissions if perm not in scopes]
+        
+        if missing_permissions:
+            return False, f"Token is missing required permissions: {', '.join(missing_permissions)}. Current permissions: {', '.join(scopes) if scopes else 'none'}"
+        
+        # Check token expiration
+        expires_at = data.get('expires_at', 0)
+        if expires_at > 0:
+            from datetime import datetime
+            exp_time = datetime.fromtimestamp(expires_at)
+            logger.info(f"Token expires at: {exp_time}")
+        
+        logger.info(f"✓ Facebook token validated successfully. Permissions: {', '.join(scopes)}")
+        return True, None
+        
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Failed to validate token: {e}"
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_data = e.response.json()
+                error_msg = f"Failed to validate token: {error_data}"
+            except:
+                error_msg = f"Failed to validate token: {e.response.text}"
+        return False, error_msg
+
+
 def post_to_facebook(message):
     """Post message to Facebook Page using Graph API."""
     if not FB_PAGE_ID or not FB_PAGE_TOKEN:
@@ -277,6 +348,30 @@ def main():
         logger.error("Required environment variables not set:")
         logger.error("  - FB_PAGE_ID")
         logger.error("  - FB_PAGE_TOKEN")
+        return
+    
+    # Validate Facebook token and permissions BEFORE proceeding
+    logger.info("Validating Facebook Page Access Token...")
+    is_valid, error_msg = validate_facebook_token()
+    if not is_valid:
+        logger.error("=" * 60)
+        logger.error("❌ Facebook Page Access Token validation FAILED")
+        logger.error("=" * 60)
+        logger.error(f"Error: {error_msg}")
+        logger.error("")
+        logger.error("The bot cannot run until the Facebook token issue is fixed.")
+        logger.error("")
+        logger.error("To fix this issue:")
+        logger.error("1. Ensure you have a Page Access Token (not a User Access Token)")
+        logger.error("2. The token must have the following permissions:")
+        logger.error("   - pages_read_engagement")
+        logger.error("   - pages_manage_posts")
+        logger.error("3. Your account must be an admin of the page")
+        logger.error("4. The token's page ID must match FB_PAGE_ID")
+        logger.error("")
+        logger.error("You can debug your token at:")
+        logger.error("  https://developers.facebook.com/tools/debug/accesstoken/")
+        logger.error("=" * 60)
         return
     
     # Check OpenAI API key (required for article generation)
